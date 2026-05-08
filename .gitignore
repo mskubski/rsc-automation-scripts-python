@@ -1,0 +1,4 @@
+.env
+.rsc_token_cache
+__pycache__/
+*.pyc
