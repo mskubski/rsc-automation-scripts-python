@@ -148,6 +148,11 @@ pip3 install -r requirements.txt
 
 ## Key GraphQL entry points
 
+- **M365 Orgs**: `o365Orgs { nodes { id name tenantId } }`
+- **M365 Teams**: `o365Teams(o365OrgId: "<orgId>") { nodes { id name effectiveSlaDomain { id name } } }`
+- **M365 SharePoint Sites**: `o365Sites(o365OrgId: "<orgId>") { nodes { id name effectiveSlaDomain { id name } } }`
+- **M365 Configured Groups (list)**: `o365Groups(o365OrgId: "<orgId>") { nodes { id name metadata { sharepointObjects teamsObjects } } }`
+- **M365 Configured Group anlegen**: `addConfiguredGroupToHierarchy(input: { orgId: "<orgId>" displayName: "…" wildcard: "*" pdls: [] workload: O365Teams|O365Site }) { groupId }` — RSC-native Gruppe für Teams/SharePoint per Wildcard-Expression; PDL-Liste leer = "All PDLs"
 - **List VMs**: `vSphereVmNewConnection(filter: [{field: IS_RELIC texts: "false"}, {field: IS_REPLICATED texts: "false"}])` → `id name effectiveSlaDomain { id name } powerStatus`
 - **VM snapshots**: `vSphereVmNew(fid: "<id>") { snapshotConnection { nodes { id date isOnDemandSnapshot } } }`
 - **On-demand backup**: `vsphereBulkOnDemandSnapshot(input: { config: { vms: ["<id>"] slaId: "<id>" } })`
@@ -183,6 +188,4 @@ RBS (Rubrik Backup Service) is tried first without credentials. If RSC returns e
 | `rsc_client.py` | Shared GraphQL helpers — import `gql`, `gql_vars`, `gql_vars_raw` |
 | `startVMbackup.py` | Interactive VM selection, triggers on-demand backup |
 | `startVMbackupWithStatus.py` | Same as above, polls and streams backup status |
-| `graph_auth.py` | Shared token cache helper for Microsoft Graph/SharePoint — independent of RSC credentials, call `get_graph_token()` / `get_sharepoint_token()` |
-| `graph_client.py` | Shared Graph + SharePoint REST helpers — import `graph_get`, `graph_post`, `graph_put`, `graph_paginate`, `sp_rest_get`, `sp_rest_post` |
-| `createM365Group.py` | Creates an M365 Team or SharePoint group via Microsoft Graph and populates it from a text/CSV list (users for team, sites for sharepoint) — not connected to RSC, Gaia read-only rule does not apply |
+| `createO365Group.py` | Creates RSC-native O365 Configured Groups (Teams/SharePoint) from a CSV list via `addConfiguredGroupToHierarchy` and optionally assigns an SLA domain — uses RSC mutations, Gaia read-only rule applies |

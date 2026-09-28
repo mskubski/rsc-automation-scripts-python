@@ -3,8 +3,6 @@
 Python scripts for automating operations against the **Rubrik Security Cloud (RSC) GraphQL API**.  
 All scripts use [`requests`](https://docs.python-requests.org/) and share a common authentication and GraphQL client layer.
 
-This repo also includes `createM365Group.py`, which is **independent of RSC**: it automates Microsoft 365 Team / SharePoint group creation via the Microsoft Graph API, using its own credentials and client layer (`graph_auth.py`, `graph_client.py`). See the "M365 Gruppen-Import" section below.
-
 ---
 
 ## Prerequisites
@@ -143,80 +141,50 @@ SUCCESS! On-demand backup started.
 
 ---
 
-## M365 Gruppen-Import (`createM365Group.py`)
+## M365-Gruppen in RSC (`createO365Group.py`)
 
-Erstellt ein **Microsoft 365 Team** oder eine **SharePoint-Gruppe** über die Microsoft Graph API und befüllt sie mit Objekten aus einer Text- oder CSV-Liste. Dieses Skript ist **komplett unabhängig von RSC** — es nutzt eine eigene Azure-AD-App-Registrierung und eigene `.env`-Variablen, keine RSC-Credentials.
+Erstellt **RSC-native "Configured Groups"** für Microsoft 365 **Teams** oder **SharePoint-Sites** — die gleiche Funktion wie in der RSC-UI unter *Add Group → Create SharePoint/Teams Group*. RSC matcht dabei automatisch Teams/SharePoint-Objekte aus dem angebundenen M365-Tenant per Wildcard-Expression (optional gefiltert nach PDL) und legt eine Gruppe an, der anschließend gemeinsam eine SLA-Domain zugewiesen werden kann.
 
-> Die Gaia-Read-Only-Regel aus `CLAUDE.md` gilt nur für Mutationen in der RSC-GraphQL-API und ist auf dieses Skript **nicht anwendbar**.
+Nutzt ausschließlich die RSC-GraphQL-API (`rsc_auth.py`, `rsc_client.py`) — **keine** Microsoft-Graph-Credentials nötig.
 
-### Zusätzliche `.env`-Variablen
+> ⚠️ `addConfiguredGroupToHierarchy` und `assignSla` sind RSC-**Mutationen**. Die Gaia-Read-Only-Regel aus `CLAUDE.md` gilt daher für dieses Skript — das Skript bricht automatisch mit einer Fehlermeldung ab, wenn `RSC_FQDN` "gaia" enthält und `--dry-run` nicht gesetzt ist.
 
-```env
-GRAPH_TENANT_ID=00000000-0000-0000-0000-000000000000
-GRAPH_CLIENT_ID=11111111-1111-1111-1111-111111111111
-GRAPH_CLIENT_SECRET=your-app-registration-secret
+### CSV-Format
+
+Pro Zeile eine anzulegende Gruppe. Header-Zeile ist erforderlich.
+
+```csv
+name,type,expression,pdls,sla
+Project X SharePoint,sharepoint,Project X*,,Gold
+Project X Teams,team,*,USA;GBR,Platinum
 ```
 
-| Variable | Beschreibung |
-|---|---|
-| `GRAPH_TENANT_ID` | Microsoft Entra ID Tenant-ID |
-| `GRAPH_CLIENT_ID` | App-Registrierung (Client ID) |
-| `GRAPH_CLIENT_SECRET` | App-Registrierung Client Secret |
-
-Token-Caching läuft analog zu `rsc_auth.py`, aber über zwei getrennte Cache-Dateien (`.graph_token_cache` für Microsoft Graph, `.graph_sp_token_cache` für die klassische SharePoint-REST-API), da beide Scopes unterschiedliche Audiences haben.
-
-### Benötigte Azure-AD-App-Berechtigungen (Application, Admin Consent erforderlich)
-
-- **Microsoft Graph**: `Group.ReadWrite.All`, `User.Read.All`, `Team.Create`, `TeamMember.ReadWrite.All`, `Sites.Read.All`
-- **SharePoint** (klassische API-Berechtigung im Entra-Portal, separat von Graph): `Sites.FullControl.All` — nur für `--type sharepoint` benötigt.
-
-> ⚠️ `Sites.FullControl.All` ist eine tenant-weit mächtige Berechtigung. Die App-Registrierung entsprechend absichern (Secret-Rotation, restriktive Owner-Liste).
-
-**Technischer Hintergrund:** Der naheliegende Graph-Endpunkt `POST /sites/{id}/permissions` kann laut [Microsoft-Doku](https://learn.microsoft.com/en-us/graph/api/site-post-permissions?view=graph-rest-1.0) **nur Anwendungsberechtigungen** vergeben, keine Gruppen-/Benutzerberechtigungen auf einer Site. Um die neu erstellte M365-Gruppe tatsächlich einer bestehenden SharePoint-Site hinzuzufügen, nutzt das Skript im `sharepoint`-Modus daher zusätzlich die klassische SharePoint-REST-API (`_api/web/sitegroups/...`) mit claims-codiertem Gruppennamen.
-
-### Listenformat & Auto-Erkennung
-
-Die Datei kann `.csv` (erste Spalte pro Zeile) oder reiner Text sein (eine Zeile = ein Eintrag). Leerzeilen und Zeilen mit `#` werden ignoriert. **CSV-Dateien dürfen keine Header-Zeile enthalten** — jede Zeile wird 1:1 als Eintrag interpretiert. Jede Zeile wird automatisch klassifiziert:
-
-| Muster | Erkannt als | Verwendung |
+| Spalte | Pflicht | Beschreibung |
 |---|---|---|
-| enthält `@` und sieht wie eine E-Mail aus | Benutzer | `--type team`: wird als Teammitglied aufgelöst und hinzugefügt |
-| beginnt mit `http://` oder `https://` | Site-URL | `--type sharepoint`: wird als Site aufgelöst |
-| alles andere | Name | wird per Graph-Suche aufgelöst (Displayname- bzw. Site-Suche) |
-
-Einträge, die nicht zum gewählten `--type` passen (z. B. eine E-Mail-Adresse im `sharepoint`-Modus), werden übersprungen und in der Zusammenfassung als Warnung ausgegeben.
+| `name` | ja | Anzeigename der RSC-Gruppe |
+| `type` | ja | `team` oder `sharepoint` |
+| `expression` | nein | Wildcard-Muster (z. B. `*`, `Project X*`); leer = alle Objekte |
+| `pdls` | nein | `;`-getrennte Liste von 3-Buchstaben-Regioncodes (Preferred Data Locations); leer = "All PDLs" |
+| `sla` | nein | Name einer bestehenden SLA-Domain; wenn gesetzt, wird sie der neuen Gruppe direkt zugewiesen |
 
 ### Verwendung
 
 ```bash
-# Team erstellen und Mitglieder aus einer Liste hinzufügen
-python3 createM365Group.py --type team \
-  --name "Project X" \
-  --owner admin@contoso.com \
-  --file members.txt
+# Gruppen aus einer CSV-Liste anlegen (und ggf. SLA zuweisen)
+python3 createO365Group.py --file groups.csv
 
-# SharePoint: Gruppe erstellen und ihr Zugriff auf bestehende Sites geben
-python3 createM365Group.py --type sharepoint \
-  --name "Project X Access" \
-  --owner admin@contoso.com \
-  --file sites.csv \
-  --role member
+# Testlauf ohne Schreibzugriffe (nur validieren/anzeigen)
+python3 createO365Group.py --file groups.csv --dry-run
 
-# Testlauf ohne Schreibzugriffe (Auflösung/Klassifizierung nur anzeigen)
-python3 createM365Group.py --type team --name "Project X" \
-  --owner admin@contoso.com --file members.txt --dry-run
+# Explizite M365-Org angeben (nötig, wenn mehr als eine Org in RSC verbunden ist)
+python3 createO365Group.py --file groups.csv --org-id <rsc-org-id>
 ```
 
 | Argument | Pflicht | Beschreibung |
 |---|---|---|
-| `--type {team,sharepoint}` | ja | Zu erstellender Gruppentyp |
-| `--name` | ja | Anzeigename der neuen Gruppe |
-| `--file` | ja | Pfad zur `.txt`/`.csv`-Liste |
-| `--owner` | ja | UPN des initialen Gruppenbesitzers |
-| `--description` | nein | Gruppenbeschreibung |
-| `--mail-nickname` | nein | Standard: aus `--name` abgeleiteter Slug |
-| `--role {owner,member,visitor}` | nein (Standard `member`) | nur `--type sharepoint`: Ziel-Berechtigungsgruppe je Site |
-| `--dry-run` | nein | Nur auflösen/anzeigen, keine Schreiboperationen |
+| `--file` | ja | Pfad zur CSV-Liste der anzulegenden Gruppen |
+| `--org-id` | nein | RSC-ID der M365-Org (Standard: automatisch, wenn nur eine Org existiert) |
+| `--dry-run` | nein | Nur validieren/anzeigen, keine Schreiboperationen |
 
 ---
 
@@ -224,14 +192,13 @@ python3 createM365Group.py --type team --name "Project X" \
 
 ```
 .
-├── rsc_auth.py          # Shared token cache helper (RSC)
-├── rsc_client.py        # Shared GraphQL client (gql, gql_vars, gql_vars_raw)
-├── startVMbackup.py     # On-demand VM backup
-├── graph_auth.py        # Shared token cache helper (Microsoft Graph / SharePoint)
-├── graph_client.py      # Shared Graph + SharePoint REST client
-├── createM365Group.py   # M365 Team/SharePoint group creation + import
-├── requirements.txt     # Python dependencies
-├── .env                 # Credentials (not committed)
+├── rsc_auth.py            # Shared token cache helper (RSC)
+├── rsc_client.py          # Shared GraphQL client (gql, gql_vars, gql_vars_raw)
+├── startVMbackup.py       # On-demand VM backup
+├── startVMbackupWithStatus.py  # On-demand VM backup with status polling
+├── createO365Group.py     # RSC-native O365 Configured Group creation (Teams/SharePoint) + SLA assignment
+├── requirements.txt       # Python dependencies
+├── .env                   # Credentials (not committed)
 └── .gitignore
 ```
 
