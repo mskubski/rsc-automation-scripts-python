@@ -1,4 +1,6 @@
 .env
 .rsc_token_cache
+.graph_token_cache
+.graph_sp_token_cache
 __pycache__/
 *.pyc

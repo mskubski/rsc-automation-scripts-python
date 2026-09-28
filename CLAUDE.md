@@ -1,5 +1,24 @@
 # CLAUDE.md
 
+---
+
+## SICHERHEITSREGEL: RSC Gaia = Interne Demo-Umgebung (READ-ONLY)
+
+Sobald `RSC_FQDN` den Begriff **gaia** enthält (z.B. `rubrik-gaia.my.rubrik.com`), handelt es sich um die **interne Rubrik Demo-Umgebung**.
+
+**IN DIESER UMGEBUNG GILT ABSOLUTES READ-ONLY-GEBOT — KEINE AUSNAHMEN:**
+
+- ERLAUBT: Lesen, Abfragen, Anzeigen, Exportieren, Listings
+- VERBOTEN: Schreiben, Erstellen, Löschen, Ändern, Starten, Stoppen, Zuweisen
+- VERBOTEN: Jegliche Mutations in der RSC GraphQL API
+- VERBOTEN: Backups starten, SLAs erstellen/ändern/löschen, Objekte zuweisen
+- VERBOTEN: Restores ausführen, Konfigurationen ändern, Skripte die schreiben ausführen
+
+Diese Regel gilt auch dann, wenn der Benutzer technisch über Schreibrechte verfügt.
+Bei Anfragen zum Schreiben: darauf hinweisen, dass Gaia eine geschützte Demo-Umgebung ist und keine Schreiboperationen erlaubt sind.
+
+---
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## What this repo is
@@ -163,3 +182,7 @@ RBS (Rubrik Backup Service) is tried first without credentials. If RSC returns e
 | `rsc_auth.py` | Shared token cache helper — call `get_token()` |
 | `rsc_client.py` | Shared GraphQL helpers — import `gql`, `gql_vars`, `gql_vars_raw` |
 | `startVMbackup.py` | Interactive VM selection, triggers on-demand backup |
+| `startVMbackupWithStatus.py` | Same as above, polls and streams backup status |
+| `graph_auth.py` | Shared token cache helper for Microsoft Graph/SharePoint — independent of RSC credentials, call `get_graph_token()` / `get_sharepoint_token()` |
+| `graph_client.py` | Shared Graph + SharePoint REST helpers — import `graph_get`, `graph_post`, `graph_put`, `graph_paginate`, `sp_rest_get`, `sp_rest_post` |
+| `createM365Group.py` | Creates an M365 Team or SharePoint group via Microsoft Graph and populates it from a text/CSV list (users for team, sites for sharepoint) — not connected to RSC, Gaia read-only rule does not apply |

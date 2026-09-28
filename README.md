@@ -3,6 +3,8 @@
 Python scripts for automating operations against the **Rubrik Security Cloud (RSC) GraphQL API**.  
 All scripts use [`requests`](https://docs.python-requests.org/) and share a common authentication and GraphQL client layer.
 
+This repo also includes `createM365Group.py`, which is **independent of RSC**: it automates Microsoft 365 Team / SharePoint group creation via the Microsoft Graph API, using its own credentials and client layer (`graph_auth.py`, `graph_client.py`). See the "M365 Gruppen-Import" section below.
+
 ---
 
 ## Prerequisites
@@ -141,13 +143,93 @@ SUCCESS! On-demand backup started.
 
 ---
 
+## M365 Gruppen-Import (`createM365Group.py`)
+
+Erstellt ein **Microsoft 365 Team** oder eine **SharePoint-Gruppe** über die Microsoft Graph API und befüllt sie mit Objekten aus einer Text- oder CSV-Liste. Dieses Skript ist **komplett unabhängig von RSC** — es nutzt eine eigene Azure-AD-App-Registrierung und eigene `.env`-Variablen, keine RSC-Credentials.
+
+> Die Gaia-Read-Only-Regel aus `CLAUDE.md` gilt nur für Mutationen in der RSC-GraphQL-API und ist auf dieses Skript **nicht anwendbar**.
+
+### Zusätzliche `.env`-Variablen
+
+```env
+GRAPH_TENANT_ID=00000000-0000-0000-0000-000000000000
+GRAPH_CLIENT_ID=11111111-1111-1111-1111-111111111111
+GRAPH_CLIENT_SECRET=your-app-registration-secret
+```
+
+| Variable | Beschreibung |
+|---|---|
+| `GRAPH_TENANT_ID` | Microsoft Entra ID Tenant-ID |
+| `GRAPH_CLIENT_ID` | App-Registrierung (Client ID) |
+| `GRAPH_CLIENT_SECRET` | App-Registrierung Client Secret |
+
+Token-Caching läuft analog zu `rsc_auth.py`, aber über zwei getrennte Cache-Dateien (`.graph_token_cache` für Microsoft Graph, `.graph_sp_token_cache` für die klassische SharePoint-REST-API), da beide Scopes unterschiedliche Audiences haben.
+
+### Benötigte Azure-AD-App-Berechtigungen (Application, Admin Consent erforderlich)
+
+- **Microsoft Graph**: `Group.ReadWrite.All`, `User.Read.All`, `Team.Create`, `TeamMember.ReadWrite.All`, `Sites.Read.All`
+- **SharePoint** (klassische API-Berechtigung im Entra-Portal, separat von Graph): `Sites.FullControl.All` — nur für `--type sharepoint` benötigt.
+
+> ⚠️ `Sites.FullControl.All` ist eine tenant-weit mächtige Berechtigung. Die App-Registrierung entsprechend absichern (Secret-Rotation, restriktive Owner-Liste).
+
+**Technischer Hintergrund:** Der naheliegende Graph-Endpunkt `POST /sites/{id}/permissions` kann laut [Microsoft-Doku](https://learn.microsoft.com/en-us/graph/api/site-post-permissions?view=graph-rest-1.0) **nur Anwendungsberechtigungen** vergeben, keine Gruppen-/Benutzerberechtigungen auf einer Site. Um die neu erstellte M365-Gruppe tatsächlich einer bestehenden SharePoint-Site hinzuzufügen, nutzt das Skript im `sharepoint`-Modus daher zusätzlich die klassische SharePoint-REST-API (`_api/web/sitegroups/...`) mit claims-codiertem Gruppennamen.
+
+### Listenformat & Auto-Erkennung
+
+Die Datei kann `.csv` (erste Spalte pro Zeile) oder reiner Text sein (eine Zeile = ein Eintrag). Leerzeilen und Zeilen mit `#` werden ignoriert. **CSV-Dateien dürfen keine Header-Zeile enthalten** — jede Zeile wird 1:1 als Eintrag interpretiert. Jede Zeile wird automatisch klassifiziert:
+
+| Muster | Erkannt als | Verwendung |
+|---|---|---|
+| enthält `@` und sieht wie eine E-Mail aus | Benutzer | `--type team`: wird als Teammitglied aufgelöst und hinzugefügt |
+| beginnt mit `http://` oder `https://` | Site-URL | `--type sharepoint`: wird als Site aufgelöst |
+| alles andere | Name | wird per Graph-Suche aufgelöst (Displayname- bzw. Site-Suche) |
+
+Einträge, die nicht zum gewählten `--type` passen (z. B. eine E-Mail-Adresse im `sharepoint`-Modus), werden übersprungen und in der Zusammenfassung als Warnung ausgegeben.
+
+### Verwendung
+
+```bash
+# Team erstellen und Mitglieder aus einer Liste hinzufügen
+python3 createM365Group.py --type team \
+  --name "Project X" \
+  --owner admin@contoso.com \
+  --file members.txt
+
+# SharePoint: Gruppe erstellen und ihr Zugriff auf bestehende Sites geben
+python3 createM365Group.py --type sharepoint \
+  --name "Project X Access" \
+  --owner admin@contoso.com \
+  --file sites.csv \
+  --role member
+
+# Testlauf ohne Schreibzugriffe (Auflösung/Klassifizierung nur anzeigen)
+python3 createM365Group.py --type team --name "Project X" \
+  --owner admin@contoso.com --file members.txt --dry-run
+```
+
+| Argument | Pflicht | Beschreibung |
+|---|---|---|
+| `--type {team,sharepoint}` | ja | Zu erstellender Gruppentyp |
+| `--name` | ja | Anzeigename der neuen Gruppe |
+| `--file` | ja | Pfad zur `.txt`/`.csv`-Liste |
+| `--owner` | ja | UPN des initialen Gruppenbesitzers |
+| `--description` | nein | Gruppenbeschreibung |
+| `--mail-nickname` | nein | Standard: aus `--name` abgeleiteter Slug |
+| `--role {owner,member,visitor}` | nein (Standard `member`) | nur `--type sharepoint`: Ziel-Berechtigungsgruppe je Site |
+| `--dry-run` | nein | Nur auflösen/anzeigen, keine Schreiboperationen |
+
+---
+
 ## Project structure
 
 ```
 .
-├── rsc_auth.py          # Shared token cache helper
+├── rsc_auth.py          # Shared token cache helper (RSC)
 ├── rsc_client.py        # Shared GraphQL client (gql, gql_vars, gql_vars_raw)
 ├── startVMbackup.py     # On-demand VM backup
+├── graph_auth.py        # Shared token cache helper (Microsoft Graph / SharePoint)
+├── graph_client.py      # Shared Graph + SharePoint REST client
+├── createM365Group.py   # M365 Team/SharePoint group creation + import
 ├── requirements.txt     # Python dependencies
 ├── .env                 # Credentials (not committed)
 └── .gitignore
