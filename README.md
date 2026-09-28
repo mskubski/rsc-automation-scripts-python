@@ -188,6 +188,57 @@ python3 createO365Group.py --file groups.csv --org-id <rsc-org-id>
 
 ---
 
+## SLA-Zuweisung für M365-Objekte (`assignM365Sla.py`)
+
+Weist eine bestehende RSC-SLA-Domain einer Liste von Microsoft-365-Objekten zu — **Exchange-Postfächer**, **OneDrives**, **Teams** oder **SharePoint-Sites**. Der Ablauf folgt der RSC-UI-Logik: zuerst SLA wählen, dann Objekttyp, dann die zu schützenden Objekte per Bezeichner-Liste angeben.
+
+Das Skript ist bewusst generisch aufgebaut (`WORKLOAD_TYPES`-Dict aus Connection-Name + Match-Feldern pro Typ) — weitere Objekttypen lassen sich später ergänzen, ohne den Kern-Workflow anzufassen.
+
+> ⚠️ `assignSla` ist eine RSC-**Mutation**. Die Gaia-Read-Only-Regel aus `CLAUDE.md` gilt daher für dieses Skript — es bricht automatisch ab, wenn `RSC_FQDN` "gaia" enthält und `--dry-run` nicht gesetzt ist.
+
+### Unterstützte Objekttypen & Matching
+
+| `--type` | Objekttyp | Bezeichner-Liste enthält |
+|---|---|---|
+| `exchange` | M365 Exchange Mailbox | E-Mail-Adressen (`userPrincipalName`) |
+| `onedrive` | M365 OneDrive | E-Mail-Adressen (`userPrincipalName`) oder Anzeigenamen (`userName`) |
+| `teams` | M365 Teams | Team-Namen |
+| `sharepoint` | M365 SharePoint Site | Site-Titel oder Site-URLs |
+
+Das Matching erfolgt exakt (case-insensitive). Bezeichner ohne Treffer oder mit mehreren Treffern werden übersprungen und in der Zusammenfassung ausgewiesen.
+
+### Bezeichner-Liste
+
+`.txt` (eine Zeile pro Objekt) oder `.csv` (erste Spalte). Leerzeilen und `#`-Kommentare werden ignoriert.
+
+```
+user1@contoso.com
+user2@contoso.com
+```
+
+### Verwendung
+
+```bash
+# Vollständig interaktiv: SLA und Objekttyp werden aus RSC geladen und per Menü gewählt
+python3 assignM365Sla.py --file mailboxes.txt
+
+# Vollständig automatisiert (keine Interaktion nötig)
+python3 assignM365Sla.py --file mailboxes.txt --type exchange --sla "Gold"
+
+# Testlauf ohne Schreibzugriffe (nur Zuordnung anzeigen)
+python3 assignM365Sla.py --file sites.txt --type sharepoint --sla "Gold" --dry-run
+```
+
+| Argument | Pflicht | Beschreibung |
+|---|---|---|
+| `--file` | ja | Pfad zur Bezeichner-Liste (`.txt`/`.csv`) |
+| `--sla` | nein | Name der Ziel-SLA-Domain (ohne Angabe: interaktive Auswahl aus allen SLA-Domains) |
+| `--type {exchange,onedrive,teams,sharepoint}` | nein | Objekttyp (ohne Angabe: interaktives Menü) |
+| `--org-id` | nein | RSC-ID der M365-Org (Standard: automatisch, wenn nur eine Org existiert) |
+| `--dry-run` | nein | Nur Zuordnung anzeigen, keine Schreiboperationen |
+
+---
+
 ## Project structure
 
 ```
@@ -197,6 +248,7 @@ python3 createO365Group.py --file groups.csv --org-id <rsc-org-id>
 ├── startVMbackup.py       # On-demand VM backup
 ├── startVMbackupWithStatus.py  # On-demand VM backup with status polling
 ├── createO365Group.py     # RSC-native O365 Configured Group creation (Teams/SharePoint) + SLA assignment
+├── assignM365Sla.py       # Generic SLA assignment for M365 objects (Exchange/OneDrive/Teams/SharePoint)
 ├── requirements.txt       # Python dependencies
 ├── .env                   # Credentials (not committed)
 └── .gitignore

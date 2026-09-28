@@ -167,6 +167,9 @@ pip3 install -r requirements.txt
 - **Restore activity status**: `activitySeriesConnection(filters: { objectFid: "<vmId>" lastActivityType: [Recovery] lastUpdatedTimeGt: "<time>" })`
 - **List clusters**: `clusterConnection(filter: {})` — includes `clusterNodeConnection.nodes.interfaceCidrs { interfaceName cidr }`
 - **SLA by name**: `slaDomains(filter: {field: NAME text: "…"}) { nodes { id name } }`
+- **All SLA domains**: `slaDomains { nodes { id name } }` (no filter)
+- **M365 Mailboxes**: `o365Mailboxes(o365OrgId: "<orgId>") { nodes { id name userPrincipalName effectiveSlaDomain { id name } } }`
+- **M365 OneDrives**: `o365Onedrives(o365OrgId: "<orgId>") { nodes { id name userPrincipalName userName effectiveSlaDomain { id name } } }`
 - **Create SLA**: `createGlobalSla(input: { name objectTypes snapshotSchedule { daily { basicSchedule { frequency retention retentionUnit } } } })`
 - **Assign SLA**: `assignSla(input: { slaDomainAssignType: protectWithSlaId slaOptionalId: "…" objectIds: ["…"] })`
 - **Ruby AI chatbots**: `chatbots { nodes { name id } }` → POST `/api/annapurna/<id>/retrieve`
@@ -189,3 +192,4 @@ RBS (Rubrik Backup Service) is tried first without credentials. If RSC returns e
 | `startVMbackup.py` | Interactive VM selection, triggers on-demand backup |
 | `startVMbackupWithStatus.py` | Same as above, polls and streams backup status |
 | `createO365Group.py` | Creates RSC-native O365 Configured Groups (Teams/SharePoint) from a CSV list via `addConfiguredGroupToHierarchy` and optionally assigns an SLA domain — uses RSC mutations, Gaia read-only rule applies |
+| `assignM365Sla.py` | Generic SLA assignment for a list of M365 objects (Exchange mailboxes, OneDrives, Teams, SharePoint sites) via `assignSla`; extensible `WORKLOAD_TYPES` registry — uses RSC mutations, Gaia read-only rule applies |
